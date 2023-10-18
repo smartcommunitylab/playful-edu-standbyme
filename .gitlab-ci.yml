@@ -1,0 +1,106 @@
+image: docker:latest
+
+services:
+  - docker:dind
+
+stages:
+  - build
+  - test
+  - deploy
+
+include:
+  - template: Security/Container-Scanning.gitlab-ci.yml
+  - template: Security/Dependency-Scanning.gitlab-ci.yml
+  - template: Security/SAST.gitlab-ci.yml
+
+variables:
+  DOCKER_DRIVER: overlay
+  DS_JAVA_VERSION: 20
+  SAST_JAVA_VERSION: 20
+  CONTAINER_STANDBYME_IMAGE: smartcommunitylab/playful-edu-standbyme:$CI_COMMIT_REF_NAME-$CI_COMMIT_SHORT_SHA
+  CONTAINER_STANDBYME_IMAGE_LATEST: smartcommunitylab/playful-edu-standbyme:$CI_COMMIT_REF_NAME-latest
+  CONTAINER_CACHE_IMAGE: smartcommunitylab/playfuledu-standbyme:cache
+  CS_IMAGE: smartcommunitylab/playful-edu-standbyme:$CI_COMMIT_REF_NAME-latest
+  
+update-standbyme-cache-image:
+  stage: build
+  variables:
+    BUILDKIT_PROGRESS: plain
+    DOCKER_BUILDKIT: 1 
+  script:
+    - docker login -u $DHUB_USER -p $DHUB_PASS
+    - docker build -f Dockerfile-cache -t $CONTAINER_CACHE_IMAGE .
+    - docker push $CONTAINER_CACHE_IMAGE
+  rules:
+    - changes:
+      - standbyme/pom.xml
+
+standbyme-container-build:
+  stage: build
+  script:
+    - docker login -u $DHUB_USER -p $DHUB_PASS
+    - DOCKER_BUILDKIT=1 docker build -f Dockerfile -t $CONTAINER_STANDBYME_IMAGE -t $CONTAINER_STANDBYME_IMAGE_LATEST .
+    - docker push $CONTAINER_STANDBYME_IMAGE
+    - docker push $CONTAINER_STANDBYME_IMAGE
+  only:
+    - dev
+    - prod
+    - main
+
+spotbugs-sast:
+  rules:
+     - if: '$CI_COMMIT_REF_NAME == "main"'
+
+semgrep-sast:
+  rules:
+     - if: '$CI_COMMIT_REF_NAME == "main"'
+
+nodejs-scan-sast:
+  rules:
+     - if: '$CI_COMMIT_REF_NAME == "main"'
+
+gemnasium-maven-dependency_scanning:
+  rules:
+     - if: '$CI_COMMIT_REF_NAME == "main"'
+
+gemnasium-dependency_scanning:
+  rules:
+     - if: '$CI_COMMIT_REF_NAME == "main"'
+
+container_scanning:
+  stage: test
+  variables:
+    DOCKER_IMAGE: smartcommunitylab/playful-edu-standbyme:$CI_COMMIT_REF_NAME-$CI_COMMIT_SHORT_SHA
+    DOCKERFILE_PATH: "Dockerfile"
+    GIT_STRATEGY: fetch
+    DOCKER_USER: ""
+    DOCKER_PASSWORD: ""
+  dependencies:
+    - standbyme-container-build
+  rules:
+    - if: '$CI_COMMIT_REF_NAME == "main"'
+
+
+deploy_standbyme_prod:
+  stage: deploy
+  image: smartcommunitylab/kubectl-alpine:latest
+  environment:
+    name: dslab
+  script:
+    - echo "deploy"
+    - kubectl -n playful-edu-prod set image deployments/playful-edu-standbyme playful-edu-standbyme=$CONTAINER_STANDBYME_IMAGE
+    - kubectl -n playful-edu-prod rollout status deployment playful-edu-standbyme
+  only:
+    - prod
+
+deploy_standbyme_dev:
+  stage: deploy
+  image: smartcommunitylab/kubectl-alpine:latest
+  environment:
+    name: dslab
+  script:
+    - echo "deploy"
+    - kubectl -n playful-edu-dev set image deployments/playful-edu-standbyme playful-edu-standbyme=$CONTAINER_STANDBYME_IMAGE
+    - kubectl -n playful-edu-dev rollout status deployment playful-edu-standbyme
+  only:
+    - dev
