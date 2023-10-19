@@ -1,5 +1,6 @@
 package eu.fbk.dslab.playful.standbyme.integration;
 
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
@@ -226,6 +227,7 @@ public class StandByMeService implements ApplicationListener<ContextRefreshedEve
 		HttpHeaders headers = new HttpHeaders();
 		headers.setContentType(MediaType.APPLICATION_JSON);
 		headers.setAccept(Arrays.asList(MediaType.APPLICATION_JSON));
+		headers.setAcceptCharset(Arrays.asList(Charset.forName("UTF-8")));
 		if(token) {
 			headers.add("x-auth", playfulToken);
 		}
